@@ -1,0 +1,239 @@
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  FlatList,
+  StyleSheet,
+  ActivityIndicator,
+  TouchableOpacity,
+} from 'react-native';
+import { Picker } from '@react-native-picker/picker';
+
+// Definimos um LIMITE por requisição para a API.
+// O endpoint de capítulos do MangaDex geralmente permite um máximo de 100 itens por requisição.
+const CHAPTERS_LIMIT = 100;
+
+export default function ChaptersScreen({ route, navigation }) {
+  // Extrai o 'mangaId' dos parâmetros da rota.
+  // Este ID é passado da tela anterior (ex: HomeScreen ou GenreScreen)
+  // para que possamos buscar os capítulos corretos para o mangá selecionado.
+  const { mangaId } = route.params;
+
+  // Estados do componente para gerenciar os dados e o comportamento da UI:
+  const [chapters, setChapters] = useState([]); // Armazena a lista de capítulos a serem exibidos.
+  const [loading, setLoading] = useState(true); // Indica se a busca inicial de capítulos está em andamento.
+  const [loadingMore, setLoadingMore] = useState(false); // Indica se mais capítulos estão sendo carregados (ao rolar).
+  const [language, setLanguage] = useState('en'); // O idioma selecionado para os capítulos (padrão: 'en' para Inglês).
+  const [offset, setOffset] = useState(0); // O 'offset' na paginação, indicando a partir de qual capítulo buscar.
+  const [hasMore, setHasMore] = useState(true); // Indica se ainda há mais capítulos disponíveis na API para carregar.
+
+  // --- Função para Buscar Capítulos da API MangaDex ---
+  // currentOffset: o ponto de partida para a busca (para paginação).
+  // initialLoad: booleano para diferenciar a carga inicial das cargas de "carregar mais".
+  const fetchChapters = async (currentOffset = 0, initialLoad = false) => {
+    // Se não for a carga inicial E não houver mais capítulos para carregar,
+    // ou se já estivermos carregando (inicial ou mais), simplesmente sai da função para evitar requisições duplicadas.
+    if (!initialLoad && !hasMore) {
+      return;
+    }
+    if (loading || loadingMore) { // Adiciona essa checagem para evitar múltiplas chamadas enquanto já está carregando
+        return;
+    }
+
+    // Ativa o loader apropriado (inicial ou de "carregando mais").
+    if (initialLoad) {
+      setLoading(true);
+    } else {
+      setLoadingMore(true);
+    }
+
+    try {
+      // Constrói a URL da requisição à API MangaDex.
+      // Inclui o mangaId, o idioma selecionado, a ordem ascendente dos capítulos,
+      // o limite de capítulos por requisição e o offset atual.
+      const res = await fetch(
+        `https://api.mangadex.org/chapter?manga=${mangaId}&translatedLanguage[]=${language}&order[chapter]=asc&limit=${CHAPTERS_LIMIT}&offset=${currentOffset}`
+      );
+      const data = await res.json(); // Converte a resposta da API para JSON.
+
+      // Mapeia os dados brutos da API para um formato mais limpo e fácil de usar no aplicativo.
+      const chapterList = data.data.map((ch) => ({
+        id: ch.id, // ID único do capítulo (crucial para o keyExtractor do FlatList e evitar duplicatas).
+        chapter: ch.attributes.chapter || 'N/A', // Número do capítulo.
+        title: ch.attributes.title || '', // Título do capítulo.
+      }));
+
+      // --- Lógica para Atualizar a Lista de Capítulos e Evitar Duplicatas ---
+      if (currentOffset === 0) {
+        // Se for a primeira carga (offset 0), substitui completamente a lista de capítulos.
+        setChapters(chapterList);
+      } else {
+        // Se for uma carga subsequente (carregando mais),
+        // filtramos os novos capítulos para garantir que não estamos adicionando duplicatas.
+        setChapters((prevChapters) => {
+          // Cria um Set com os IDs dos capítulos já existentes na lista.
+          const existingChapterIds = new Set(prevChapters.map(ch => ch.id));
+          // Filtra os novos capítulos, mantendo apenas aqueles cujo ID não existe ainda na lista.
+          const newUniqueChapters = chapterList.filter(ch => !existingChapterIds.has(ch.id));
+          // Retorna uma nova lista combinando os capítulos anteriores com os novos capítulos únicos.
+          return [...prevChapters, ...newUniqueChapters];
+        });
+      }
+
+      // Atualiza 'hasMore': Se a quantidade de capítulos retornados for menor que o limite da requisição,
+      // significa que não há mais capítulos na API para carregar.
+      setHasMore(chapterList.length === CHAPTERS_LIMIT);
+
+    } catch (err) {
+      // Captura e loga quaisquer erros que ocorram durante a requisição.
+      console.error('Erro ao buscar capítulos:', err);
+      // Em caso de erro, definimos hasMore como false para parar de tentar carregar infinitamente.
+      setHasMore(false);
+    } finally {
+      // Garante que os loaders sejam desativados, independentemente do sucesso ou erro da requisição.
+      if (initialLoad) {
+        setLoading(false);
+      } else {
+        setLoadingMore(false);
+      }
+    }
+  };
+
+  // --- Efeito para a Carga Inicial e Mudanças de Idioma/Mangá ---
+  useEffect(() => {
+    // Sempre que o 'mangaId' ou o 'language' mudam, reiniciamos a paginação
+    // para buscar uma nova lista de capítulos do zero.
+    setChapters([]); // Limpa a lista de capítulos antiga.
+    setOffset(0); // Reseta o offset para o início.
+    setHasMore(true); // Assume que haverá capítulos para carregar inicialmente.
+    // Chama a função de busca com offset 0 e indicando que é a carga inicial.
+    fetchChapters(0, true);
+  }, [mangaId, language]); // As dependências garantem que este efeito roda quando esses valores mudam.
+
+  // --- Função para Navegar para a Tela de Leitor ---
+  // Chamada quando o usuário clica em um item de capítulo.
+  const openReader = (chapterId) => {
+    // Navega para a tela 'Reader' (que exibirá as páginas do capítulo),
+    // passando o 'chapterId' como parâmetro.
+    navigation.navigate('Reader', { chapterId });
+  };
+
+  // --- Função para Lidar com a Rolagem (Infinite Scroll) ---
+  // Esta função é chamada pelo FlatList quando o usuário rola até o final da lista.
+  const handleLoadMore = () => {
+    // Só prossegue se:
+    // 1. Não estiver em um carregamento inicial (loading).
+    // 2. Não estiver em um carregamento "mais" (loadingMore).
+    // 3. Ainda houver mais capítulos para carregar (hasMore).
+    if (!loading && !loadingMore && hasMore) {
+      const nextOffset = offset + CHAPTERS_LIMIT; // Calcula o próximo offset.
+      setOffset(nextOffset); // Atualiza o estado do offset.
+      fetchChapters(nextOffset); // Chama a função de busca para a próxima página de capítulos.
+    }
+  };
+
+  // --- Componente para o Rodapé da Lista (Loader de "Carregando Mais") ---
+  const renderFooter = () => {
+    if (!loadingMore) return null; // Não mostra nada se não estiver carregando mais capítulos.
+    return (
+      <View style={styles.loaderFooter}>
+        <ActivityIndicator size="small" color="#000" />
+        <Text>Carregando mais...</Text>
+      </View>
+    );
+  };
+
+  // --- Estrutura da Interface do Usuário ---
+  return (
+    <View style={styles.container}>
+      {/* Seletor de Idioma para os Capítulos */}
+      <Text style={styles.label}>Idioma:</Text>
+      <Picker
+        selectedValue={language} // O valor selecionado no Picker é o estado 'language'.
+        onValueChange={(value) => setLanguage(value)} // Atualiza o estado 'language' quando o usuário seleciona um novo idioma.
+        style={styles.picker}
+      >
+        {/* Opções de Idioma no Picker */}
+        <Picker.Item label="Português (pt-br)" value="pt-br" />
+        <Picker.Item label="Inglês (en)" value="en" />
+        <Picker.Item label="Espanhol (es)" value="es" />
+        <Picker.Item label="Japonês (ja)" value="ja" />
+        <Picker.Item label="Francês (fr)" value="fr" />
+      </Picker>
+
+      {/* Renderização Condicional: Loader Inicial ou Lista de Capítulos */}
+      {loading && chapters.length === 0 ? ( // Mostra o loader inicial APENAS se estiver carregando E a lista estiver vazia.
+        <ActivityIndicator size="large" />
+      ) : (
+        // FlatList para exibir os capítulos:
+        <FlatList
+          data={chapters} // Os dados são a lista de capítulos do estado.
+          keyExtractor={(item) => item.id} // Usa o 'id' do capítulo como chave única (essencial para o React).
+          renderItem={({ item }) => ( // Define como cada item da lista será renderizado.
+            <TouchableOpacity onPress={() => openReader(item.id)}>
+              <View style={styles.chapterItem}>
+                <Text style={styles.chapterText}>Capítulo {item.chapter}</Text>
+                {item.title ? <Text>{item.title}</Text> : null} {/* Exibe o título do capítulo, se existir. */}
+              </View>
+            </TouchableOpacity>
+          )}
+          // --- Propriedades para Paginação/Infinite Scroll no FlatList ---
+          onEndReached={handleLoadMore} // Chama a função 'handleLoadMore' quando o usuário rola perto do final.
+          onEndReachedThreshold={0.5} // Dispara 'onEndReached' quando 50% do conteúdo restante está visível.
+          ListFooterComponent={renderFooter} // Componente a ser renderizado no final da lista (usado para o loader "carregando mais").
+        />
+      )}
+    </View>
+  );
+}
+
+// --- Estilos do Componente ---
+const styles = StyleSheet.create({
+  container: {
+    flex: 1, // Ocupa todo o espaço disponível.
+    padding: 20, // Preenchimento interno.
+    backgroundColor: '#fff', // Fundo branco.
+  },
+  label: {
+    fontWeight: 'bold',
+    marginBottom: 5,
+  },
+  picker: {
+    height: 50,
+    marginBottom: 10,
+  },
+  chapterItem: {
+    marginVertical: 8, // Espaçamento vertical entre os itens.
+    padding: 10, // Preenchimento interno.
+    borderBottomWidth: 1, // Linha divisória inferior.
+    borderColor: '#ccc', // Cor da linha.
+  },
+  chapterText: {
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  loaderFooter: {
+    // Estilos para o indicador de "carregando mais" no rodapé da lista.
+    paddingVertical: 20,
+    borderTopWidth: 1,
+    borderColor: '#ced0ce',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 10, // Espaçamento entre o ícone e o texto
+  },
+});
+
+
+
+
+
+
+
+Pontos Chave:
+API do MangaDex para Capítulos: Esta tela utiliza o endpoint /chapter da API do MangaDex, passando o mangaId e o translatedLanguage como parâmetros para filtrar os capítulos.
+Seleção de Idioma: O componente @react-native-picker/picker permite que o usuário altere o idioma dos capítulos. A alteração do idioma (via setLanguage) automaticamente aciona o useEffect novamente para buscar os capítulos no novo idioma.
+Reatividade com useEffect: A dependência [mangaId, language] no useEffect é crucial. Ela garante que a lista de capítulos seja atualizada sempre que o mangá (mangaId) ou o idioma (language) selecionado pelo usuário mudar.
+Navegação para o Leitor: Ao clicar em um capítulo na lista, a função openReader é chamada, que navega para uma tela chamada 'Reader' (que você provavelmente criará a seguir), passando o chapterId para que a tela do leitor saiba qual capítulo exibir.
+Estrutura de Dados da API: A API do MangaDex retorna uma estrutura de dados aninhada. O código mapeia essa estrutura para um array mais simples (id, chapter, title) para facilitar a renderização no FlatList.
+Este componente é fundamental para a experiência de leitura, permitindo que os usuários encontrem e selecionem os capítulos desejados em seu idioma preferido.

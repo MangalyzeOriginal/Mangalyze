@@ -1,0 +1,262 @@
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  FlatList,
+  StyleSheet,
+  TouchableOpacity,
+  Image,
+  ActivityIndicator,
+  ScrollView,
+} from 'react-native';
+
+export default function HomeScreen({ navigation }) {
+  // 1. Estados do Componente (useState)
+  const [search, setSearch] = useState(''); // Armazena o texto digitado na barra de pesquisa
+  const [recommendations, setRecommendations] = useState([]); // Armazena a lista de mangás recomendados/populares
+  const [searchResults, setSearchResults] = useState([]); // Armazena os resultados da pesquisa
+  const [loading, setLoading] = useState(false); // Indica se alguma operação de API está em andamento (carregando)
+
+  // 2. Efeito Colateral (useEffect)
+  useEffect(() => {
+    // Este efeito é executado apenas uma vez, quando o componente é montado.
+    // Ele chama a função para buscar os mangás populares.
+    fetchPopular();
+  }, []); // O array vazio [] significa que este efeito só roda na montagem e desmontagem.
+
+  // 3. Função para Buscar Mangás Populares (fetchPopular)
+  const fetchPopular = async () => {
+    setLoading(true); // Ativa o indicador de carregamento
+    try {
+      // Faz uma requisição GET para a API do MangaDex para obter mangás populares (limit=10, order by rating desc)
+      // Inclui 'cover_art' para que as informações da capa venham junto
+      const res = await fetch(
+        'https://api.mangadex.org/manga?limit=10&order[rating]=desc&includes[]=cover_art'
+      );
+      const data = await res.json(); // Converte a resposta para JSON
+
+      // Mapeia os dados da API para um formato mais fácil de usar no aplicativo
+      const mangas = data.data.map((item) => {
+        // Encontra o objeto 'cover_art' dentro das relações do mangá para obter o nome do arquivo da capa
+        const coverFile = item.relationships.find(
+          (rel) => rel.type === 'cover_art'
+        )?.attributes?.fileName;
+
+        return {
+          id: item.id,
+          title: item.attributes.title.en || 'Sem título', // Pega o título em inglês, ou 'Sem título' se não houver
+          image: coverFile // Constrói a URL completa da imagem da capa
+            ? `https://uploads.mangadex.org/covers/${item.id}/${coverFile}.256.jpg`
+            : null, // Se não houver capa, define como null
+        };
+      });
+
+      setRecommendations(mangas); // Atualiza o estado com os mangás recomendados
+    } catch (err) {
+      console.error('Erro ao buscar recomendados:', err); // Loga qualquer erro na console
+    } finally {
+      setLoading(false); // Desativa o indicador de carregamento, independentemente do sucesso ou erro
+    }
+  };
+
+  // 4. Função para Pesquisar Mangás (searchManga)
+  const searchManga = async (query) => {
+    setSearch(query); // Atualiza o estado 'search' com o texto digitado
+    if (query.trim() === '') {
+      // Se a pesquisa estiver vazia, limpa os resultados e sai da função
+      setSearchResults([]);
+      return;
+    }
+
+    setLoading(true); // Ativa o indicador de carregamento
+    try {
+      // Faz uma requisição GET para a API do MangaDex para pesquisar mangás pelo título
+      // Inclui 'cover_art' e limita a 15 resultados
+      const res = await fetch(
+        `https://api.mangadex.org/manga?title=${query}&limit=15&includes[]=cover_art`
+      );
+      const data = await res.json(); // Converte a resposta para JSON
+
+      // Mapeia os dados da API para um formato similar ao de fetchPopular
+      const mangas = data.data.map((item) => {
+        const coverFile = item.relationships.find(
+          (rel) => rel.type === 'cover_art'
+        )?.attributes?.fileName;
+
+        return {
+          id: item.id,
+          title: item.attributes.title.en || 'Sem título',
+          image: coverFile
+            ? `https://uploads.mangadex.org/covers/${item.id}/${coverFile}.256.jpg`
+            : null,
+        };
+      });
+
+      setSearchResults(mangas); // Atualiza o estado com os resultados da pesquisa
+    } catch (err) {
+      console.error('Erro ao buscar mangás:', err); // Loga qualquer erro
+    } finally {
+      setLoading(false); // Desativa o indicador de carregamento
+    }
+  };
+
+  // 5. Função para Renderizar Itens da Lista (renderItem)
+  // Esta função é usada pelo FlatList para renderizar cada item (mangá) individualmente
+  const renderItem = ({ item }) => (
+    <TouchableOpacity
+      style={styles.card} // Aplica estilos definidos abaixo
+      onPress={() => navigation.navigate('Chapters', { mangaId: item.id })} // Navega para a tela 'Chapters' ao clicar no mangá, passando o ID
+    >
+      {item.image ? ( // Renderiza a imagem se ela existir
+        <Image source={{ uri: item.image }} style={styles.image} />
+      ) : (
+        // Se não houver imagem, exibe um placeholder com 'Sem capa'
+        <View style={[styles.image, styles.placeholder]}>
+          <Text>Sem capa</Text>
+        </View>
+      )}
+      <Text style={styles.title} numberOfLines={2}>
+        {item.title} {/* Exibe o título do mangá, limitado a 2 linhas */}
+      </Text>
+    </TouchableOpacity>
+  );
+
+  // 6. Estrutura da Interface do Usuário (return)
+  return (
+    <ScrollView style={styles.container}>
+      {/* Campo de input para pesquisa */}
+      <TextInput
+        placeholder="Buscar mangá..."
+        value={search} // Vincula o valor do input ao estado 'search'
+        onChangeText={searchManga} // Chama searchManga toda vez que o texto muda
+        style={styles.input}
+      />
+
+      {loading ? ( // Se 'loading' for true, exibe um indicador de atividade
+        <ActivityIndicator size="large" />
+      ) : search.trim() !== '' ? ( // Se não estiver carregando E houver texto na pesquisa
+        <>
+          <Text style={styles.sectionTitle}>Resultados</Text> {/* Título para os resultados */}
+          <FlatList
+            data={searchResults} // Exibe os resultados da pesquisa
+            renderItem={renderItem} // Usa a função renderItem para cada item
+            keyExtractor={(item) => item.id} // Chave única para cada item
+            horizontal={true} // A lista rola horizontalmente
+            scrollEnabled={true} // Permite rolagem
+          />
+        </>
+      ) : (
+        // Se não estiver carregando E a pesquisa estiver vazia
+        <>
+          <Text style={styles.sectionTitle}>Recomendados</Text> {/* Título para os recomendados */}
+          <FlatList
+            horizontal // Lista rola horizontalmente
+            data={recommendations} // Exibe os mangás recomendados
+            renderItem={renderItem}
+            keyExtractor={(item) => item.id}
+            showsHorizontalScrollIndicator={false} // Não mostra a barra de rolagem horizontal
+          />
+
+          <Text style={styles.sectionTitle}>Categorias</Text> {/* Título para as categorias */}
+          <FlatList
+            horizontal // Lista de categorias rola horizontalmente
+            data={[ // Dados das categorias (hardcoded)
+              { name: 'Ação', id: '391b0423-d847-456f-aff0-8b0cfc03066b' },
+              { name: 'Comédia', id: '4d32cc48-9f00-4cca-9b5a-a839f0764984' },
+              { name: 'Fantasia', id: 'cdc58593-87dd-415e-bbc0-2ec27bf404cc' },
+              { name: 'Romance', id: '423e2eae-a7a2-4a8b-ac03-a8351462d71d' },
+              { name: 'Terror', id: 'cdad7e68-1419-41dd-bdce-27753074a640' },
+            ]}
+            renderItem={({ item }) => ( // Renderiza cada categoria
+              <TouchableOpacity
+                style={styles.genreCard}
+                onPress={() =>
+                  // Navega para uma tela 'Genre', passando o ID e o nome da categoria
+                  navigation.navigate('Genre', {
+                    genre: item.id,
+                    name: item.name,
+                  })
+                }
+              >
+                <Text style={styles.genreText}>{item.name}</Text>
+              </TouchableOpacity>
+            )}
+            keyExtractor={(item) => item.id}
+            showsHorizontalScrollIndicator={false}
+          />
+        </>
+      )}
+    </ScrollView>
+  );
+}
+
+// 7. Estilos do Componente (StyleSheet.create)
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 16, backgroundColor: '#fff' }, // Estilo principal do container
+  input: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginVertical: 10,
+  },
+  card: {
+    width: 120, // Largura fixa para os cards de mangá
+    marginRight: 12,
+    marginBottom: 16,
+  },
+  image: {
+    width: 120, // Largura da imagem do card
+    height: 180, // Altura da imagem do card
+    borderRadius: 6,
+    marginBottom: 6,
+  },
+  placeholder: {
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  genreCard: {
+    padding: 10,
+    marginRight: 10,
+    backgroundColor: '#eee',
+    borderRadius: 8,
+  },
+  genreText: {
+    fontWeight: '600',
+  },
+});
+
+
+
+
+
+
+Resumo dos Pontos Principais
+API Diferente: Este código não está usando a API MangaHook como discutimos anteriormente. Em vez disso, ele está utilizando a API oficial do MangaDex (https://api.mangadex.org/). Isso é uma mudança importante, pois a estrutura dos dados e os endpoints são diferentes.
+Gerenciamento de Estado: Usa useState para controlar o texto de pesquisa, listas de mangás (recomendados e resultados de pesquisa) e o estado de carregamento.
+Busca de Dados:
+fetchPopular: Busca 10 mangás populares do MangaDex na montagem do componente.
+searchManga: Busca mangás no MangaDex com base no texto digitado pelo usuário.
+Processamento de Dados: Ambas as funções de busca processam a resposta complexa da API do MangaDex para extrair o id, title e a image (URL da capa) de cada mangá.
+Interface Dinâmica:
+Um TextInput permite a busca.
+FlatLists são usadas para exibir listas de mangás (recomendados/resultados de pesquisa) e categorias horizontalmente.
+O conteúdo exibido na tela muda dinamicamente:
+Mostra um ActivityIndicator enquanto os dados estão sendo carregados.
+Exibe os "Resultados" da pesquisa se houver texto no campo de busca.
+Caso contrário, exibe os "Recomendados" e as "Categorias".
+Navegação: Usa a prop navigation (do React Navigation) para permitir que o usuário navegue para as telas Chapters (ao clicar em um mangá) e Genre (ao clicar em uma categoria), passando dados importantes (como mangaId ou genre ID e name).
+Estilização: O StyleSheet.create define os estilos para os elementos da interface do usuário.
+Este código é um bom exemplo de como você pode estruturar uma tela principal com funcionalidades de busca e listagem de conteúdo, buscando dados de uma API externa. Como ele mudou para a API MangaDex, se você continuar com ela, precisará ajustar as outras telas (MangaDetailsScreen.js, ChapterReaderScreen.js) para também fazer requisições e processar dados da API do MangaDex.

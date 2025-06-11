@@ -1,0 +1,119 @@
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  ActivityIndicator,
+  Image,
+  FlatList,
+  StyleSheet,
+  Dimensions, // Importado para obter as dimensões da tela
+} from 'react-native';
+
+// Obtém a largura total da tela do dispositivo. Isso é usado para garantir que as imagens ocupem toda a largura.
+const screenWidth = Dimensions.get('window').width;
+
+export default function ReaderScreen({ route }) {
+  // 1. Acessando Parâmetros da Rota
+  // A tela recebe a prop 'route' do React Navigation, que contém os parâmetros passados.
+  // 'chapterId' é o identificador único do capítulo que será lido, vindo da tela anterior.
+  const { chapterId } = route.params;
+
+  // 2. Estados do Componente (useState)
+  const [pages, setPages] = useState([]); // Armazena a lista de URLs das imagens das páginas do capítulo.
+  const [loading, setLoading] = useState(true); // Um booleano que indica se as páginas estão sendo carregadas.
+                                                // Começa como 'true' porque a busca começa assim que a tela é montada.
+
+  // 3. Função Assíncrona para Buscar Páginas do Capítulo (fetchChapterPages)
+  const fetchChapterPages = async () => {
+    try {
+      // Faz uma requisição GET para a API do MangaDex.
+      // O endpoint '/at-home/server/{chapterId}' é especial: ele não retorna as imagens em si,
+      // mas sim os dados necessários (uma URL base e um hash) para construir as URLs das imagens.
+      const response = await fetch(`https://api.mangadex.org/at-home/server/${chapterId}`);
+      const data = await response.json(); // Converte a resposta para um objeto JavaScript.
+
+      // Extrai a URL base do servidor de imagens do MangaDex.
+      const baseUrl = data.baseUrl;
+      // Extrai o hash do capítulo. Esse hash faz parte da URL de cada imagem.
+      const hash = data.chapter.hash;
+      // 'data.chapter.data' é um array que contém os nomes dos arquivos das imagens do capítulo.
+      const images = data.chapter.data;
+
+      // Mapeia o array de nomes de arquivos para construir as URLs completas de cada página.
+      // O formato é: `${baseUrl}/data/${hash}/${nomeDoArquivoDaImagem}`
+      const pageUrls = images.map(img => `${baseUrl}/data/${hash}/${img}`);
+      setPages(pageUrls); // Atualiza o estado 'pages' com as URLs completas das imagens.
+
+    } catch (error) {
+      // Se ocorrer um erro durante a requisição ou processamento, ele é capturado aqui.
+      console.error('Erro ao buscar páginas:', error); // O erro é logado no console para depuração.
+    } finally {
+      // Este bloco é executado independentemente de ter havido um erro ou não.
+      setLoading(false); // Desativa o estado de carregamento.
+    }
+  };
+
+  // 4. Efeito Colateral (useEffect)
+  useEffect(() => {
+    // Este efeito é executado apenas uma vez, quando o componente é montado pela primeira vez.
+    // Ele chama a função 'fetchChapterPages' para iniciar o carregamento das imagens.
+    fetchChapterPages();
+  }, []); // O array de dependências vazio `[]` garante que 'fetchChapterPages' seja chamada apenas na montagem inicial.
+
+  // 5. Renderização Condicional
+  // Verifica se o 'loading' é verdadeiro.
+  if (loading) {
+    return (
+      // Se estiver carregando, exibe uma tela de carregamento com um indicador de atividade.
+      <View style={styles.loaderContainer}>
+        <ActivityIndicator size="large" color="#000" />
+      </View>
+    );
+  }
+
+  // 6. Estrutura da Interface do Usuário (return)
+  // Se não estiver carregando, exibe a lista de páginas.
+  return (
+    <FlatList
+      data={pages} // A lista de URLs das páginas a serem renderizadas.
+      keyExtractor={(item, index) => index.toString()} // Uma chave única para cada item na lista (o índice é usado aqui).
+      renderItem={({ item }) => ( // Função que define como cada item (URL de imagem) será renderizado.
+        <Image
+          source={{ uri: item }} // Define a fonte da imagem usando a URL completa.
+          style={styles.pageImage} // Aplica estilos para a imagem da página.
+          resizeMode="contain" // Redimensiona a imagem para caber dentro de suas dimensões, mantendo a proporção.
+                               // Útil para garantir que a imagem não "estoure" a tela.
+        />
+      )}
+    />
+  );
+}
+
+// 7. Estilos do Componente (StyleSheet.create)
+const styles = StyleSheet.create({
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center', // Centraliza o conteúdo verticalmente
+    alignItems: 'center', // Centraliza o conteúdo horizontalmente
+  },
+  pageImage: {
+    width: screenWidth, // A imagem ocupa toda a largura da tela.
+    height: screenWidth * 1.5, // A altura da imagem é definida para ser 1.5 vezes a largura.
+                               // Isso é uma estimativa para a proporção de páginas de mangá, você pode ajustar.
+    marginBottom: 10, // Adiciona um pequeno espaço entre as imagens para facilitar a rolagem.
+    backgroundColor: '#000', // Um fundo preto para as imagens, comum em leitores de mangá.
+  },
+});
+
+
+
+
+
+
+Resumo das Alterações e Principais Pontos:
+Esta versão da ReaderScreen.js é mais direta e focada na sua função principal.
+
+Simplificação do Estado de Erro: A variável error foi removida, e o tratamento de erro agora apenas loga no console em vez de exibir na UI.
+Ajuste do useEffect: O useEffect agora tem uma dependência vazia ([]), o que significa que fetchChapterPages será chamada apenas uma vez quando a tela for montada. Na versão anterior, era [chapterId], o que faria a busca ser reexecutada se o chapterId mudasse (embora geralmente não mude dentro da mesma tela de leitor de um capítulo).
+Dimensionamento da Imagem: O uso de Dimensions.get('window').width e a propriedade height: screenWidth * 1.5 no estilo pageImage garantem que as imagens se adaptem à largura da tela do dispositivo e tenham uma altura proporcional, o que é crucial para uma boa experiência de leitura em diferentes tamanhos de tela.
+Foco na Leitura: O backgroundColor: '#000' nas imagens e a FlatList sem indicadores de rolagem (implícito, já que não foi especificado showsVerticalScrollIndicator) ajudam a criar uma experiência de leitura imersiva.
+Em essência, esta versão é uma implementação mais enxuta e robusta da tela de leitura, concentrando-se em carregar e exibir as páginas de mangá de forma eficiente e responsiva.

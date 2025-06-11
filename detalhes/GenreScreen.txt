@@ -1,0 +1,124 @@
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  FlatList,
+  ActivityIndicator,
+  Image,
+  TouchableOpacity,
+  StyleSheet,
+} from 'react-native';
+
+// O componente GenreScreen recebe 'route' e 'navigation' como props do React Navigation
+export default function GenreScreen({ route, navigation }) {
+  // 1. Acessando Parâmetros da Rota
+  // 'route.params' contém os dados passados para esta tela durante a navegação.
+  // Aqui, extraímos 'genre' (o ID do gênero) e 'name' (o nome legível do gênero, ex: "Ação").
+  const { genre, name } = route.params;
+
+  // 2. Estados do Componente (useState)
+  const [mangas, setMangas] = useState([]); // Armazena a lista de mangás do gênero
+  const [loading, setLoading] = useState(true); // Indica se os dados estão sendo carregados
+
+  // 3. Efeito Colateral (useEffect)
+  useEffect(() => {
+    // Esta função assíncrona é definida dentro do useEffect para buscar os mangás do gênero.
+    const fetchGenre = async () => {
+      try {
+        setLoading(true); // Ativa o indicador de carregamento
+        // Faz uma requisição GET para a API do MangaDex.
+        // - `includedTags[]=${genre}`: Filtra os mangás pelo ID do gênero que foi passado.
+        // - `limit=15`: Limita o número de resultados a 15.
+        // - `includes[]=cover_art`: Solicita as informações da capa para cada mangá.
+        const res = await fetch(
+          `https://api.mangadex.org/manga?includedTags[]=${genre}&limit=15&includes[]=cover_art`
+        );
+        const data = await res.json(); // Converte a resposta para JSON
+
+        // Mapeia os dados brutos da API para um formato mais simples para o aplicativo.
+        // O `Array.isArray(data.data) ? ... : []` garante que 'data.data' seja um array
+        // antes de tentar mapeá-lo, prevenindo erros se a API retornar algo inesperado.
+        const list = Array.isArray(data.data)
+          ? data.data.map((item) => {
+              // Encontra o objeto de capa dentro das relações do mangá
+              const coverFile = item.relationships.find(
+                (rel) => rel.type === 'cover_art'
+              )?.attributes?.fileName;
+
+              return {
+                id: item.id, // ID único do mangá
+                title: item.attributes.title.en || 'Sem título', // Título em inglês ou fallback
+                image: coverFile // Constrói a URL completa da imagem da capa
+                  ? `https://uploads.mangadex.org/covers/${item.id}/${coverFile}.256.jpg`
+                  : null, // null se não houver capa
+              };
+            })
+          : []; // Se 'data.data' não for um array, retorna um array vazio
+
+        setMangas(list); // Atualiza o estado com a lista de mangás filtrada por gênero
+      } catch (err) {
+        console.error('Erro ao buscar por gênero:', err); // Loga erros na console
+      } finally {
+        setLoading(false); // Desativa o indicador de carregamento
+      }
+    };
+
+    fetchGenre(); // Chama a função para buscar os mangás quando o componente é montado ou o 'genre' muda.
+  }, [genre]); // O array de dependências '[genre]' faz com que o useEffect seja reexecutado
+  // sempre que o valor da prop 'genre' mudar (ex: se o usuário navegar para outro gênero).
+
+  // 4. Estrutura da Interface do Usuário (return)
+  return (
+    <View style={styles.container}>
+      {/* Título da tela, mostrando o nome do gênero atual */}
+      <Text style={styles.title}>Gênero: {name}</Text>
+      {loading ? ( // Renderização condicional: se estiver carregando, mostra o indicador
+        <ActivityIndicator size="large" />
+      ) : (
+        // Se não estiver carregando, exibe a lista de mangás
+        <FlatList
+          data={mangas} // Os dados a serem exibidos são os mangás do estado 'mangas'
+          keyExtractor={(item) => item.id} // Usa o ID do mangá como chave única
+          renderItem={({ item }) => (
+            // Para cada item na lista, renderiza um TouchableOpacity
+            <TouchableOpacity
+              onPress={() => navigation.navigate('Chapters', { mangaId: item.id })} // Ao clicar, navega para a tela 'Chapters', passando o ID do mangá
+              style={styles.item} // Aplica estilos para cada item da lista
+            >
+              {/* Imagem da capa do mangá */}
+              <Image
+                source={{ uri: item.image }} // Define a URL da imagem
+                style={styles.image} // Aplica estilos à imagem
+              />
+              {/* Título do mangá */}
+              <Text style={styles.text}>{item.title}</Text>
+            </TouchableOpacity>
+          )}
+        />
+      )}
+    </View>
+  );
+}
+
+// 5. Estilos do Componente (StyleSheet.create)
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 16, backgroundColor: '#fff' }, // Container principal: ocupa todo o espaço, com padding e fundo branco.
+  title: { fontSize: 18, fontWeight: 'bold', marginBottom: 10 }, // Título da tela: tamanho, peso e margem.
+  item: { flexDirection: 'row', marginBottom: 12, alignItems: 'center' }, // Estilo de cada item da lista: linha, margem, alinhamento vertical.
+  image: { width: 60, height: 90, marginRight: 10, borderRadius: 6 }, // Estilo da imagem da capa: dimensões, margem e borda arredondada.
+  text: { flexShrink: 1 }, // Estilo do texto do título do mangá: permite que o texto encolha para não estourar a linha.
+});
+
+
+
+
+
+
+
+Pontos Chave:
+Reaproveitamento da API do MangaDex: Assim como na HomeScreen, esta tela também utiliza a API do MangaDex para buscar dados, mantendo a consistência na fonte dos dados.
+Recebimento de Props: A tela recebe genre (o ID único do gênero) e name (o nome amigável do gênero) via route.params, que são passados quando você navega para esta tela (por exemplo, a partir da HomeScreen).
+useEffect com Dependência: O useEffect aqui tem [genre] como dependência. Isso significa que a função fetchGenre será executada não só quando a tela for montada pela primeira vez, mas também sempre que o valor da variável genre mudar. Isso é crucial se, por exemplo, você permitir que o usuário mude o gênero sem sair da tela.
+Tratamento de Carregamento: O estado loading e o ActivityIndicator fornecem feedback visual ao usuário enquanto os dados estão sendo buscados.
+Estrutura do Item: A FlatList renderiza cada mangá como um TouchableOpacity que contém a imagem da capa e o título, permitindo que o usuário clique para ver mais detalhes (navegando para a tela Chapters).
+Este componente é um excelente exemplo de como criar telas dinâmicas que buscam dados com base em parâmetros de navegação, exibindo-os de forma eficiente em listas no React Native.
