@@ -12,6 +12,7 @@ export default function App() {
   return (
     <NavigationContainer>
       <Stack.Navigator>
+        <Stack.Screen name="Login" component={LoginScreen} options={{ title: 'Login' }} />
         <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'Mangalyze' }} />
         <Stack.Screen name="Chapters" component={ChaptersScreen} options={{ title: 'Capítulos' }} />
         <Stack.Screen name="Reader" component={ReaderScreen} options={{ title: 'Modo Leitura' }} />
