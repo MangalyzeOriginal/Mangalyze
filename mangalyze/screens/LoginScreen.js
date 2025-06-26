@@ -43,7 +43,7 @@ export default function App({ navigation }) {
         secureTextEntry
       />
 
-      <TouchableOpacity style={styles.botao} onPress={navigation.navigate('Home'), handleLogin}>
+      <TouchableOpacity style={styles.botao} onPress={navigation.navigate('Home', {handleLogin})}>
         <Text style={styles.botaoTexto}>Entrar</Text>
       </TouchableOpacity>
     </View>
