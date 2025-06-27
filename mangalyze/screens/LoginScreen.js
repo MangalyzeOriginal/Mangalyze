@@ -1,18 +1,31 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet } from 'react-native';
+import { initDB, loginUser, insertDummyUser } from './Database';
 
-export default function App({ navigation }) {
+export default function LoginScreen({ navigation }) {
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
 
+  useEffect(() => {
+    initDB();
+    insertDummyUser(); // Apenas para teste, remove isso depois em produção
+  }, []);
+
   const handleLogin = () => {
-    if (!nome || !email || !senha) {
-      Alert.alert('Atenção', 'Por favor, preencha todos os campos.');
+    if (!email || !senha) {
+      Alert.alert('Atenção', 'Preencha todos os campos.');
       return;
     }
 
-    Alert.alert('Bem-vindo!', `Olá ${nome}, seu login foi realizado com sucesso!`);
+    loginUser(email, senha, (success, user) => {
+      if (success) {
+        Alert.alert('Bem-vindo!', `Olá ${user.nome}, login realizado com sucesso!`);
+        navigation.navigate('Home', { user });
+      } else {
+        Alert.alert('Erro', 'E-mail ou senha inválidos.');
+      }
+    });
   };
 
   return (
@@ -43,7 +56,7 @@ export default function App({ navigation }) {
         secureTextEntry
       />
 
-      <TouchableOpacity style={styles.botao} onPress={navigation.navigate('Home', {handleLogin})}>
+      <TouchableOpacity style={styles.botao} onPress={handleLogin}>
         <Text style={styles.botaoTexto}>Entrar</Text>
       </TouchableOpacity>
     </View>
